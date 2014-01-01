@@ -1,0 +1,26 @@
+{
+  "uuid": "f507984e-8d23-4665-9819-15e616a26bb7",
+  "shortName": "Reddit Frontpage",
+  "longName": "Reddit Frontpage",
+  "companyName": "Null Squared LLC",
+  "versionCode": 0,
+  "versionLabel": "0.0.0",
+  "watchapp": {
+    "watchface": false
+  },
+  "appKeys": {
+    "post": 0,
+    "comment": 1,
+    "author": 10,
+    "subreddit": 11,
+    "text": 12,
+    "index": 13,
+    "parent": 14,
+    "title": 15,
+    "upvote": 20,
+    "downvote": 21
+  },
+  "resources": {
+    "media": []
+  }
+}
