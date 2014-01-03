@@ -1,11 +1,19 @@
 #include <pebble.h>
 
 // windows
-static Window *window;
+static Window *menu_window;
+static Window *post_window;
+static ScrollLayer *post_scroll;
+static TextLayer *post_text;
+static Window *comment_window;
 static MenuLayer *menu_layer;
 // message IDs
 enum {
-  AKEY_POST = 0,
+  AKEY_REQ_POST = 0,
+  AKEY_POST,
+  AKEY_REQ_POST_DATA,
+  AKEY_POST_DATA,
+  AKEY_REQ_COMMENT,
   AKEY_COMMENT,
   AKEY_AUTHOR = 10,
   AKEY_SUBREDDIT,
@@ -13,6 +21,7 @@ enum {
   AKEY_INDEX,
   AKEY_PARENT,
   AKEY_TITLE,
+  AKEY_DATA,
   AKEY_UPVOTE = 20,
   AKEY_DOWNVOTE
 };
@@ -23,9 +32,20 @@ typedef struct Post {
   char* author;
   char* subreddit;
 } Post;
-#define POSTS_SIZE 15
+#define POSTS_SIZE 10
 static Post posts[POSTS_SIZE];
 static int num_posts = 0;
+static Post *selected_post = NULL; // currently selected post
+static char *selected_data = NULL; // data for the currently selected post
+// TODO: comment data
+
+// constants
+static const int vert_scroll_text_padding = 4;
+
+/**********************
+* Function Prototypes *
+**********************/
+void request_post_data(Post* post);
 
 /******************
 * Button Handlers *
@@ -91,6 +111,7 @@ static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuI
   // draw the posts based on the index (row)
   // TODO: error checking and stuff...
   Post *post = &(posts[cell_index->row]);
+
   // This is a basic menu item with a title and subtitle
   menu_cell_basic_draw(ctx, cell_layer, post->title, post->author, NULL);
 }
@@ -98,13 +119,15 @@ static void menu_draw_row_callback(GContext* ctx, const Layer *cell_layer, MenuI
 // Here we capture when a user selects a menu item
 void menu_select_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
   // Use the row to specify which item will receive the select action
-  // TODO: load new window
+  selected_post = &(posts[cell_index->row]);
+  window_stack_push(post_window, true);
+  request_post_data(selected_post);
 }
 
 /**********
 * Windows *
 **********/
-static void window_load(Window *window) {
+static void menu_window_load(Window *window) {
   // Now we prepare to initialize the menu layer
   // We need the bounds to specify the menu layer's viewport size
   // In this case, it'll be the same as the window's
@@ -132,14 +155,70 @@ static void window_load(Window *window) {
   layer_add_child(window_layer, menu_layer_get_layer(menu_layer));
 }
 
-static void window_unload(Window *window) {
+static void menu_window_unload(Window *window) {
   // Destroy the menu layer
   menu_layer_destroy(menu_layer);
 }
 
+static void post_window_load(Window *window) {
+  // window that stores the post data
+  // We need the bounds to specify the menu layer's viewport size
+  // In this case, it'll be the same as the window's
+  Layer *window_layer = window_get_root_layer(window);
+  GRect bounds = layer_get_frame(window_layer);
+  GRect max_text_bounds = GRect(0, 0, bounds.size.w, 2000);
+
+  // create scroll with text inside
+  post_scroll = scroll_layer_create(bounds);
+
+  // configure button presses
+  scroll_layer_set_click_config_onto_window(post_scroll, window);
+
+  // create text object to be scrolled
+  post_text = text_layer_create(max_text_bounds);
+  text_layer_set_text(post_text, "Loading...");
+  text_layer_set_font(post_text, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+
+  // resize text object for scrolling
+  GSize max_size = text_layer_get_content_size(post_text);
+  text_layer_set_size(post_text, max_size);
+  scroll_layer_set_content_size(post_scroll, GSize(bounds.size.w, max_size.h + vert_scroll_text_padding));
+
+  // add text object to scroll
+  scroll_layer_add_child(post_scroll, text_layer_get_layer(post_text));
+
+  // Add it to the window for display
+  layer_add_child(window_layer, scroll_layer_get_layer(post_scroll));
+
+  // TODO: set up callback for select and long select
+}
+
+static void post_window_unload(Window *window) {
+  text_layer_destroy(post_text);
+  scroll_layer_destroy(post_scroll);
+}
+
+
 /****************
 * Data transfer *
 ****************/
+void request_post_data(Post* post) {
+  // request data for post
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  if (iter == NULL) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Failed to create dictionary");
+    return;
+  }
+  // set message to REQ_POST_DATA
+  dict_write_int8(iter, AKEY_REQ_POST_DATA, 1);
+  // set post index
+  dict_write_uint32(iter, AKEY_INDEX, selected_post->index);
+  dict_write_end(iter);
+  // send the message
+  app_message_outbox_send();
+}
+
 void out_sent_handler(DictionaryIterator *sent, void *context) {
   // outgoing message was delivered
 }
@@ -173,9 +252,30 @@ void in_received_handler(DictionaryIterator *received, void *context) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Subreddit: %s", tuple->value->cstring);
     post->subreddit = malloc(strlen(tuple->value->cstring)+1);
     strcpy(post->subreddit, tuple->value->cstring);
-
     // reload menu
     menu_layer_reload_data(menu_layer);
+  } else if (dict_find(received, AKEY_POST_DATA)) {
+    // handle POST_DATA message
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Received post data");
+    int index = dict_find(received, AKEY_INDEX)->value->uint32;
+    if (!selected_post || index != selected_post->index) {
+      // didn't match selected post
+      APP_LOG(APP_LOG_LEVEL_WARNING, "Index didn't match: %d", index);
+    }
+    // free existing data
+    if (selected_data != NULL) {
+      free(selected_data);
+    }
+    // copy data
+    tuple = dict_find(received, AKEY_DATA);
+    selected_data = malloc(strlen(tuple->value->cstring)+1);
+    strcpy(selected_data, tuple->value->cstring);
+    // display the data
+    text_layer_set_text(post_text, selected_data);
+    // resize the text layer
+    GSize max_size = text_layer_get_content_size(post_text);
+    text_layer_set_size(post_text, max_size);
+    scroll_layer_set_content_size(post_scroll, GSize(max_size.w, max_size.h + vert_scroll_text_padding));
   }
 }
 
@@ -196,25 +296,50 @@ static void init(void) {
 
   app_message_open(app_message_inbox_size_maximum(), 128);
 
-  // draw window
-  window = window_create();
-  window_set_window_handlers(window, (WindowHandlers) {
-    .load = window_load,
-    .unload = window_unload,
+  // draw menu window
+  menu_window = window_create();
+  window_set_window_handlers(menu_window, (WindowHandlers) {
+    .load = menu_window_load,
+    .unload = menu_window_unload,
   });
-  const bool animated = true;
-  window_stack_push(window, animated);
+  window_stack_push(menu_window, true);
+
+  // create post window
+  post_window = window_create();
+
+  // create comment window
+  window_set_window_handlers(post_window, (WindowHandlers) {
+    .load = post_window_load,
+    .unload = post_window_unload,
+  });
+
 }
 
 static void deinit(void) {
-  window_destroy(window);
+  window_destroy(menu_window);
+  window_destroy(post_window);
+  //window_destroy(comment_window);
+  for (int i=0; i<num_posts; ++i) {
+    if (posts[i].author) {
+      free(posts[i].author);
+    }
+    if (posts[i].subreddit) {
+      free(posts[i].subreddit);
+    }
+    if (posts[i].title) {
+      free(posts[i].title);
+    }
+  }
+  if (selected_data) {
+    free(selected_data);
+  }
 }
 
 
 int main(void) {
   init();
 
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Done initializing, pushed window: %p", window);
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Done initializing, pushed window: %p", menu_window);
 
   app_event_loop();
   deinit();

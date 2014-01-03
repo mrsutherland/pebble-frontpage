@@ -9,14 +9,19 @@
     "watchface": false
   },
   "appKeys": {
-    "post": 0,
-    "comment": 1,
+    "req_post": 0,
+    "post": 1,
+    "req_post_data": 2,
+    "post_data": 3,
+    "req_comment": 4,
+    "comment": 5,
     "author": 10,
     "subreddit": 11,
     "text": 12,
     "index": 13,
     "parent": 14,
     "title": 15,
+    "data": 16,
     "upvote": 20,
     "downvote": 21
   },
