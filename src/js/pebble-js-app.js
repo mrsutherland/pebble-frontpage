@@ -86,7 +86,7 @@ App.post.get = function() {
         }
       } else { console.log("Error"); }
     }
-  }
+  };
   req.send(null);
 };
 
