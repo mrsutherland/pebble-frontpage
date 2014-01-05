@@ -1,5 +1,8 @@
 #include <pebble.h>
 
+// Constants
+static const int vert_scroll_text_padding = 12;
+
 // windows
 static Window *menu_window;
 static Window *post_window;
@@ -39,8 +42,6 @@ static Post *selected_post = NULL; // currently selected post
 static char *selected_data = NULL; // data for the currently selected post
 // TODO: comment data
 
-// constants
-static const int vert_scroll_text_padding = 4;
 
 /**********************
 * Function Prototypes *
