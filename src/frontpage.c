@@ -1,6 +1,7 @@
 #include <pebble.h>
 
 // Constants
+static char subreddit[] = "/r/all";
 static const int vert_scroll_text_padding = 12;
 
 // windows
@@ -103,7 +104,7 @@ static int16_t menu_get_header_height_callback(MenuLayer *menu_layer, uint16_t s
 // Here we draw what each header is
 static void menu_draw_header_callback(GContext* ctx, const Layer *cell_layer, uint16_t section_index, void *data) {
   // NOTE: only one section
-  menu_cell_basic_header_draw(ctx, cell_layer, "/r/all");
+  menu_cell_basic_header_draw(ctx, cell_layer, subreddit);
 }
 
 // This is the menu item draw callback where you specify what each item should look like
